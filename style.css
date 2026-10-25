@@ -108,3 +108,4 @@ main.enter{animation:enter .35s cubic-bezier(.2,.8,.2,1)}@keyframes enter{from{o
 .banner-ready{background:linear-gradient(135deg,#4b5d94e6,#6d5e95e6)!important;color:#fff;display:grid;gap:8px}.banner-ready .btn{background:linear-gradient(180deg,#f3e3b8,#c9a96a);color:#273046}
 .upcoming{margin:6px 0;padding:8px 12px;border-radius:12px;background:#d1a85f22}.rh tr.up td{background:#d1a85f14}
 [data-key] .btn.primary{grid-column:1/-1;font-size:1.1rem;min-height:56px;background:linear-gradient(180deg,#6fae93,#4f8370);box-shadow:inset 0 1px 0 #ffffff55,0 4px 0 #3c6656,0 8px 18px #4f837055}
+.toast .undo{margin-left:10px;border:0;border-radius:99px;padding:8px 14px;font-weight:700;background:#f3e3b8;color:#273046;min-height:36px}.vrow{cursor:pointer}.editv{display:block;margin:8px auto 0}

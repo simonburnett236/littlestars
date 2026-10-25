@@ -18,7 +18,7 @@ const locOf=v=>v&&v.loc?.length?v.loc[v.loc.length-1].at:'home';
 function schoolMs(v,from=-Infinity,to=Infinity){let ms=0,st=null;const end=v.out||Date.now();(v.loc||[]).forEach(e=>{if(e.at==='school'&&st==null)st=e.t;else if(e.at==='home'&&st!=null){ms+=Math.max(0,Math.min(e.t,to)-Math.max(st,from));st=null}});if(st!=null)ms+=Math.max(0,Math.min(end,to)-Math.max(st,from));return ms}
 const totMs=v=>(v.out||Date.now())-v.in;
 function setLoc(id,at){const v=openVisit(id);if(!v||locOf(v)===at)return;(v.loc??=[]).push({t:Date.now(),at});save();toast(at==='school'?`🏫 ${kid(id).name} is at school`:`🏠 ${kid(id).name} is back home`);render()}
-window.toast=toast;function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.append(t);setTimeout(()=>t.remove(),2200)}
+window.toast=toast;function toast(m,act,fn){document.querySelectorAll('.toast').forEach(x=>x.remove());const t=document.createElement('div');t.className='toast';t.textContent=m;if(act){const b=document.createElement('button');b.className='undo';b.textContent=act;b.onclick=()=>{t.remove();fn()};t.append(' ',b)}document.body.append(t);setTimeout(()=>t.remove(),act?6000:2200)}
 // ---------- FX ----------
 const cv=$('#fx'),cx=cv.getContext('2d');let parts=[];
 function burst(x,y,stars){const pro=D.settings.theme==='pro';cv.width=innerWidth;cv.height=innerHeight;const cols=['#ff6fb5','#ffd23f','#7ad7f0','#7a5cff','#5be37d','#ff8a00'];
@@ -29,7 +29,7 @@ function tick(){cx.clearRect(0,0,cv.width,cv.height);parts.forEach(p=>{p.x+=p.vx
  parts=parts.filter(p=>p.a>0);if(parts.length)requestAnimationFrame(tick);else cx.clearRect(0,0,cv.width,cv.height)}
 // ---------- check in/out ----------
 function toggle(id,ev){const o=openVisit(id),r=ev?.currentTarget?.getBoundingClientRect?.()||{left:innerWidth/2,top:innerHeight/2,width:0};
- if(o){o.out=Date.now();toast(`👋 ${kid(id).name} checked out · ${hm(o.out-o.in)}`)}else{D.visits.push({id:uid(),kid:id,in:Date.now(),out:null});toast(`🎉 ${kid(id).name} is here!`)}
+ if(o){o.out=Date.now();toast(`👋 ${kid(id).name} checked out · ${hm(o.out-o.in)}`,'Undo',()=>{o.out=null;save();render();toast('Check-out undone')})}else{const nv={id:uid(),kid:id,in:Date.now(),out:null};D.visits.push(nv);toast(`🎉 ${kid(id).name} is here!`,'Undo',()=>{D.visits=D.visits.filter(v=>v!==nv);save();render();toast('Check-in undone')})}
  save();burst(r.left+r.width/2,r.top+20,!o);render()}
 // ---------- billing ----------
 // All amounts come from D.settings.rates (history, defaults in DEF) or family overrides – nothing hardcoded here.
@@ -97,10 +97,10 @@ function invText(b){const L=[];L.push(`⭐ ${b.biz} – ${b.kind==='statement'?'
 const b64e=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const b64d=s=>JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/')))));
 const invLink=b=>location.origin+location.pathname+'#invoice='+b64e(b);
-async function share(o){if(navigator.share){try{await navigator.share(o);return}catch(e){if(e.name==='AbortError')return}}
+async function share(o){if(NATIVE){NATIVE.shareText(o.title||'Little Stars',o.url?o.text+' '+o.url:o.text);return}if(navigator.share){try{await navigator.share(o);return}catch(e){if(e.name==='AbortError')return}}
  await navigator.clipboard?.writeText(o.url?o.text+' '+o.url:o.text).catch(()=>{});toast('📋 Copied!')}
 const isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
-function sms(f,body){if(isMobile&&f.phone){location.href=`sms:${f.phone.replace(/[^\d+]/g,'')}?&body=${encodeURIComponent(body)}`}else share({title:'Invoice',text:body})}
+function sms(f,body){if(NATIVE&&f.phone){NATIVE.openUrl(`sms:${f.phone.replace(/[^\d+]/g,'')}?body=${encodeURIComponent(body)}`);return}if(isMobile&&f.phone){location.href=`sms:${f.phone.replace(/[^\d+]/g,'')}?&body=${encodeURIComponent(body)}`}else share({title:'Invoice',text:body})}
 const rowsH=(list,cls='')=>list.map(i=>`<tr class="${cls}${i.amt<0?' credit':''}"><td>${esc(i.label)}</td><td class="r">${sgn(i.amt)}</td></tr>`).join('');
 function hoursH(b){return `<div class="sscard"><b>⏱️ Hours · 🏠 Sitter vs 🏫 School</b><table data-ss><tr><th>Kid</th><th class="r">🏠 Sitter</th><th class="r">🏫 School</th></tr>${b.kids.map(k=>`<tr><td>${esc(k.name)}</td><td class="r">${k.hrs} hrs</td><td class="r">${k.school||0} hrs</td></tr>`).join('')}<tr><th>Total</th><th class="r" data-hrs>${b.totalHrs} hrs</th><th class="r" data-school>${b.schoolHrs||0} hrs</th></tr></table><small>Hours watched = sitter time only.</small></div>`}
 const headH=(b,sub)=>`<div class="row inv-head"><svg style="flex:0 0 52px;height:52px"><use href="#star"/></svg><div style="flex:4"><h2 style="margin:0">${esc(b.biz)}</h2><div>${sub}</div></div></div><p><b>${esc(b.family)} family</b>${b.parent?' · '+esc(b.parent):''}</p>`;
@@ -133,6 +133,11 @@ function genStatements(y,m){if(!monthDone(y,m)){toast(mname(y,m)+' is not finish
  D.families.forEach(f=>{const k=f.id+'|'+mkey(y,m),old=D.statements[k];D.statements[k]={fam:f.id,month:mkey(y,m),at:Date.now(),version:(old?.version||0)+1,b:statement(f.id,y,m)};n++});save();return n}
 function stmtBanner(){const {y,m}=lastMonth();if(!D.families.length)return '';const missing=D.families.filter(f=>!D.statements?.[f.id+'|'+mkey(y,m)]);if(!missing.length)return '';
  return `<div class="card banner-ready noprint" data-ready><b>📄 ${new Date(y,m,1).toLocaleString('en-US',{month:'long'})} statements ready</b><div><small>${missing.length} famil${missing.length>1?'ies':'y'} not generated yet</small></div><button class="btn" id="genst">Generate statements</button></div>`}
+function invFile(b){let css='';for(const sh of document.styleSheets){try{for(const r of sh.cssRules)css+=r.cssText+'\n'}catch(e){}}
+ const star=document.querySelector('svg defs').outerHTML;return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(b.biz)} – ${esc(b.period)}</title><style>${css}</style></head><body class="theme-pro" style="padding:14px"><svg width="0" height="0" style="position:absolute">${star}</svg>${invHtml(b)}</body></html>`}
+function shareLink(b,f,text){if(NATIVE){NATIVE.shareFile(`${(b.family||'invoice').replace(/\W+/g,'')}-${b.kind==='statement'?'statement':'invoice'}-${dkey(b.due||Date.now())}.html`,'text/html',invFile(b),text);return}share({title:`${b.biz} ${b.kind==='statement'?'statement':'invoice'}`,text,url:invLink(b)})}
+function doPrint(){if(NATIVE)NATIVE.printPage(D.settings.name+' invoice');else print()}
+window.__lsFlush=()=>save();window.__lsReload=()=>Store.load().then(o=>{if(o&&(o._savedAt||0)>(D._savedAt||0)){D=Object.assign(structuredClone(DEF),o);migrate();render();toast('🔄 Updated from widget')}});window.__lsBack=()=>{if(!$('#modal').hidden){$('#modal').hidden=true;return true}return false};
 // ---------- views ----------
 let lastTab=null,tab='here',bview='week',hmode='week',bm=new Date();
 function render(){document.body.className='theme-'+D.settings.theme;$('#title').textContent=D.settings.name;
@@ -141,10 +146,10 @@ const VIEWS={
 here(){const inN=D.kids.filter(k=>openVisit(k.id)).length,schN=D.kids.filter(k=>locOf(openVisit(k.id))==='school'&&openVisit(k.id)).length;
  V.innerHTML=stmtBanner()+`<div class="banner"><div class="card"><big>${inN}</big>here now</div><div class="card"><big>${schN}</big>at school</div><div class="card"><big>${D.kids.length}</big>kids</div></div>`+
  (D.kids.length?`<div class="grid">${D.kids.map(k=>{const o=openVisit(k.id);return `<div class="kid ${o?'in':''}" data-kid="${k.id}">${avHtml(k)}<b>${esc(k.name)}</b>${o?`<span class="loc ${locOf(o)}" data-loc>${locOf(o)==='school'?'🏫 At School':'🏠 At Home'}</span>`:''}
- <div class="timer" data-start="${o?o.in:''}">${o?dur(Date.now()-o.in):'—'}</div><button class="btn ${o?'out':''}" data-toggle="${k.id}">${o?'Check out 👋':'Check in ✨'}</button>${o?`<div class="seg locseg"><button data-setloc="home" data-k="${k.id}" class="${locOf(o)==='home'?'on':''}">🏠 Home</button><button data-setloc="school" data-k="${k.id}" class="${locOf(o)==='school'?'on':''}">🏫 School</button></div>`:''}</div>`}).join('')}</div>`
+ <div class="timer" data-start="${o?o.in:''}">${o?dur(Date.now()-o.in):'—'}</div><button class="btn ${o?'out':''}" data-toggle="${k.id}">${o?'Check out 👋':'Check in ✨'}</button>${o?`<button class="btn ghost sm editv" data-editv="${o.id}">✏️ Edit visit</button>`:''}${o?`<div class="seg locseg"><button data-setloc="home" data-k="${k.id}" class="${locOf(o)==='home'?'on':''}">🏠 Home</button><button data-setloc="school" data-k="${k.id}" class="${locOf(o)==='school'?'on':''}">🏫 School</button></div>`:''}</div>`}).join('')}</div>`
  :`<div class="empty card"><svg viewBox="0 0 200 120"><use href="#empty"/></svg><p>No kids yet! Add your first little star.</p><button class="btn" onclick="tab='kids';render();editKid()">➕ Add a kid</button></div>`);
  if(D.kids.length){const d0=new Date();d0.setHours(0,0,0,0);V.insertAdjacentHTML('beforeend',ssCard(ssRows(+d0,+d0+864e5),'Today'))}
- V.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=e=>toggle(b.dataset.toggle,e));V.querySelectorAll('[data-setloc]').forEach(b=>b.onclick=()=>setLoc(b.dataset.k,b.dataset.setloc))},
+ V.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=e=>toggle(b.dataset.toggle,e));V.querySelectorAll('[data-setloc]').forEach(b=>b.onclick=()=>setLoc(b.dataset.k,b.dataset.setloc));V.querySelectorAll('[data-editv]').forEach(b=>b.onclick=()=>editVisit(b.dataset.editv))},
 kids(){V.innerHTML=`<div class="row"><button class="btn" id="ak">➕ Add kid</button><button class="btn ghost" id="af">👪 Add family</button></div><br>`+
  D.families.map(f=>`<div class="card"><div class="row"><h2 style="flex:3">👪 ${esc(f.name)}</h2><button class="btn ghost" data-ef="${f.id}">Edit</button></div>
  <div>${esc(f.parent||'')} ${f.phone?'· 📞 '+esc(f.phone):''}</div><div class="grid" style="margin-top:10px">${D.kids.filter(k=>k.family===f.id).map(k=>`<div class="kid" data-ek="${k.id}">${avHtml(k)}<b>${esc(k.name)}</b>${openVisit(k.id)?`<span class="loc ${locOf(openVisit(k.id))}">${locOf(openVisit(k.id))==='school'?'🏫 At School':'🏠 At Home'}</span>`:'<span class="loc off">Not here</span>'}${k.notes?`<small>⚠️ ${esc(k.notes)}</small>`:''}</div>`).join('')}</div></div>`).join('');
@@ -154,8 +159,8 @@ history(){const now=new Date();let from,to;if(hmode==='day'){from=new Date(now);
  const tot={};const sch={};vs.forEach(v=>{const sm=schoolMs(v);tot[v.kid]=(tot[v.kid]||0)+totMs(v)-sm;sch[v.kid]=(sch[v.kid]||0)+sm});
  V.innerHTML=`<div class="seg">${['day','week','month'].map(m=>`<button data-m="${m}" class="${hmode===m?'on':''}">${m[0].toUpperCase()+m.slice(1)}</button>`).join('')}</div>
  <div class="card" hidden><b>Totals</b><br>${Object.keys(tot).map(k=>`<span class="pill" hidden>${esc(kid(k)?.name||'?')}: ${hm(tot[k])} watched${sch[k]?' · 🏫 '+hm(sch[k]):''}</span>`).join('')||'No visits yet'}</div>`+ssCard(ssRows(+from,to),hmode==='day'?'Today':hmode==='week'?'This week':'This month')+
- Object.entries(days).map(([d,l])=>`<div class="card"><b>${new Date(d+'T12:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</b><table>${l.map(v=>`<tr><td>${esc(kid(v.kid)?.name||'?')}</td><td>${new Date(v.in).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}–${v.out?new Date(v.out).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'now'}</td><td class="r">${hm(totMs(v)-schoolMs(v))}${schoolMs(v)?`<br><small>🏫 ${hm(schoolMs(v))}</small>`:''}</td></tr>${(v.loc||[]).map(e=>`<tr class="locrow"><td colspan="3"><small>${new Date(e.t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})} · ${e.at==='school'?'🏫 Went to school':'🏠 Back at home'}</small></td></tr>`).join('')}`).join('')}</table></div>`).join('');
- V.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{hmode=b.dataset.m;render()})},
+ Object.entries(days).map(([d,l])=>`<div class="card"><b>${new Date(d+'T12:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</b><table>${l.map(v=>`<tr class="vrow" data-ev="${v.id}"><td>${esc(kid(v.kid)?.name||'?')} <small class="noprint">✏️</small></td><td>${new Date(v.in).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}–${v.out?new Date(v.out).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'now'}</td><td class="r">${hm(totMs(v)-schoolMs(v))}${schoolMs(v)?`<br><small>🏫 ${hm(schoolMs(v))}</small>`:''}</td></tr>${(v.loc||[]).map(e=>`<tr class="locrow"><td colspan="3"><small>${new Date(e.t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})} · ${e.at==='school'?'🏫 Went to school':'🏠 Back at home'}</small></td></tr>`).join('')}`).join('')}</table></div>`).join('');
+ V.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{hmode=b.dataset.m;render()});V.querySelectorAll('[data-ev]').forEach(r=>r.onclick=()=>editVisit(r.dataset.ev))},
 bills(){const y=bm.getFullYear(),m=bm.getMonth();
  V.innerHTML=stmtBanner()+`<div class="seg noprint">${['week','month'].map(x=>`<button data-bv="${x}" class="${bview===x?'on':''}">${x==='week'?'Weekly bills':'Monthly statement'}</button>`).join('')}</div>
  <div class="row noprint"><button class="btn ghost" id="pm">◀</button><h2 style="flex:3;text-align:center">${bm.toLocaleString('en-US',{month:'long',year:'numeric'})}</h2><button class="btn ghost" id="nm">▶</button></div>`+
@@ -175,8 +180,8 @@ bills(){const y=bm.getFullYear(),m=bm.getMonth();
   if(a==='paid'){const X=D.weeks[key]??={};(X.pay??=[]).push({t:Date.now(),amt:Math.round(b.balance*100)/100,note:'Paid in full'});save();render();burst(innerWidth/2,innerHeight/2,true)}
   if(a==='pay')editWeek(key,'pay');if(a==='adj')editWeek(key,'adj');
   if(a==='text')sms(f,invText(b));
-  if(a==='link')share({title:`${b.biz} ${b.kind==='statement'?'statement':'invoice'}`,text:`Your ${b.kind==='statement'?'statement':'invoice'}: ${sgn(amt)}${dueTxt}`,url:invLink(b)});
-  if(a==='smslink')sms(f,`Hi! Your ${b.biz} ${b.kind==='statement'?'statement':'invoice'}: ${sgn(amt)}${dueTxt} ${invLink(b)}`);if(a==='print')printOne(btn.closest('[data-fam]'),btn.parentNode)})},
+  if(a==='link')shareLink(b,f,`Your ${b.kind==='statement'?'statement':'invoice'}: ${sgn(amt)}${dueTxt}`);
+  if(a==='smslink')sms(f,NATIVE?invText(b):`Hi! Your ${b.biz} ${b.kind==='statement'?'statement':'invoice'}: ${sgn(amt)}${dueTxt} ${invLink(b)}`);if(a==='print')printOne(btn.closest('[data-fam]'),btn.parentNode)})},
 settings(){const S=D.settings,cur=pick(S.rates,dkey(Date.now()))||S.rates[0],today=dkey(monday(Date.now()));
  V.innerHTML=`<div class="card"><label>Business name</label><input id="sn" value="${esc(S.name)}">
  <label>Theme</label><div class="seg">${['pro','candy','ocean','night'].map(t=>`<button data-t="${t}" class="${S.theme===t?'on':''}">${{pro:'Professional',candy:'Candy',ocean:'Ocean',night:'Night'}[t]}</button>`).join('')}</div><button class="btn" id="ss">💾 Save name</button></div>
@@ -190,7 +195,7 @@ settings(){const S=D.settings,cur=pick(S.rates,dkey(Date.now()))||S.rates[0],tod
  $('#ss').onclick=()=>{S.name=$('#sn').value||DEF.settings.name;save();toast('Saved ✅');render()};
  $('#rsave').onclick=()=>{const r=readRate(false);if(!r)return;r.from=$('#r_from').value||today;S.rates=S.rates.filter(x=>x.from!==r.from&&x.from!==window.__editFrom).concat(r);window.__editFrom=null;save();toast(r.from>dkey(Date.now())?'📅 Scheduled for '+fmtD(r.from+'T12:00'):'Rates saved ✅');render()};
  bindHist(S.rates,'g',()=>render());
- showStorage();$('#ex').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(D,null,1)],{type:'application/json'}));a.download='littlestars-backup-'+dkey(Date.now())+'.json';a.click()};
+ showStorage();$('#ex').onclick=()=>{if(NATIVE){NATIVE.shareFile('littlestars-backup-'+dkey(Date.now())+'.json','application/json',JSON.stringify(D,null,1),null);return}const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(D,null,1)],{type:'application/json'}));a.download='littlestars-backup-'+dkey(Date.now())+'.json';a.click()};
  $('#im').onchange=async e=>{try{const j=JSON.parse(await e.target.files[0].text());if(!j.kids)throw 0;if(confirm('Replace all data with this backup?')){D=Object.assign(structuredClone(DEF),j);migrate();save();render();toast('Restored ✅')}}catch(_){toast('Not a valid backup')}}}
 };
 // rate form shared by global settings and family overrides (inherit = blank)
@@ -205,7 +210,7 @@ function readRate(inh){const r={},num=k=>$('#r_'+k).value;for(const k of ['weekl
 function rateHist(list,tag){const L=[...(list||[])].sort((a,b)=>a.from<b.from?1:-1);if(!L.length)return '<small>No overrides – uses default rates.</small>';
  const td=dkey(Date.now()),up=L.filter(r=>r.from>td);return `${up.length?`<div class="upcoming" data-upcoming><b>📅 Upcoming rate changes (${up.length})</b></div>`:''}<table class="rh">${L.map(r=>`<tr class="${r.from>td?'up':''}"><td><b>${r.from>td?'<span class="pill st-partial">Upcoming</span> ':''}from ${fmtD(r.from+'T12:00')}</b><br><small>${RKEYS.filter(k=>r[k]!=null).map(k=>k==='dueDay'?'due '+DOW[r[k]]:k==='perFamily'?(r[k]?'per family':'per kid'):k==='cap'?(+r[k]?'cap '+money(+r[k]):'no cap'):k+' '+money(+r[k])).join(' · ')}</small></td><td class="r"><button class="btn ghost sm" data-ed${tag}="${r.from}">✏️</button>${list.length>1||tag!=='g'?`<button class="btn ghost sm" data-del${tag}="${r.from}">✕</button>`:''}</td></tr>`).join('')}</table>`}
 function bindHist(list,tag,after){document.querySelectorAll(`[data-ed${tag}]`).forEach(b=>b.onclick=()=>{const r=list.find(x=>x.from===b.getAttribute('data-ed'+tag));['weekly','friday','cap'].forEach(k=>$('#r_'+k).value=r[k]??'');$('#r_dueDay').value=r.dueDay??'';$('#r_perFamily').value=r.perFamily==null?'':r.perFamily?'1':'0';$('#r_from').value=r.from;window.__editFrom=r.from;$('#r_from').scrollIntoView({block:'center'});toast('Editing change from '+fmtD(r.from+'T12:00'))});document.querySelectorAll(`[data-del${tag}]`).forEach(b=>b.onclick=()=>{if(!confirm('Remove this rate change?'))return;const i=list.findIndex(r=>r.from===b.getAttribute('data-del'+tag));list.splice(i,1);save();after()})}
-function printOne(wrap,btns){document.body.classList.add('printing');const card=btns.previousElementSibling;card.classList.add('printme');setTimeout(()=>{print();card.classList.remove('printme');document.body.classList.remove('printing')},50)}
+function printOne(wrap,btns){document.body.classList.add('printing');const card=btns.previousElementSibling;card.classList.add('printme');setTimeout(()=>{doPrint();setTimeout(()=>{card.classList.remove('printme');document.body.classList.remove('printing')},NATIVE?3000:0)},50)}
 // weekly adjustments, override, payments
 function editWeek(key,mode='pay'){const fid=key.split('|')[0],X=D.weeks[key]??={adj:[],pay:[]};X.adj??=[];X.pay??=[];const w=weekBill(fid,key);
  modal(`<h2>${mode==='pay'?'💵 Add Payment':'✏️ Adjust Bill'}</h2><p><b>${esc(w.period)}</b></p><p>This week's charges: <b>${sgn(w.charges)}</b> · Total due: <b>${sgn(w.totalDue)}</b></p>
@@ -220,10 +225,10 @@ function editWeek(key,mode='pay'){const fid=key.split('|')[0],X=D.weeks[key]??={
  $('#a_add').onclick=()=>{const amt=+$('#a_amt').value;if(!amt)return toast('Enter an amount');X.adj.push({desc:$('#a_desc').value.trim()||($('#a_type').value==='1'?'Extra charge':'Credit'),amt:Math.abs(amt)*+$('#a_type').value});re()};
  $('#o_save').onclick=()=>{const v=$('#o_val').value;X.override=v===''?null:+v;re()};
  $('#p_add').onclick=()=>{const amt=+$('#p_amt').value;if(!(amt>0))return toast('Enter a payment amount');X.pay.push({t:+new Date($('#p_date').value+'T12:00'),amt,note:$('#p_note').value.trim()});re()};
- $('#sheet').querySelectorAll('[data-da]').forEach(b=>b.onclick=()=>{X.adj.splice(+b.dataset.da,1);re()});$('#sheet').querySelectorAll('[data-dp]').forEach(b=>b.onclick=()=>{X.pay.splice(+b.dataset.dp,1);re()});
+ $('#sheet').querySelectorAll('[data-da]').forEach(b=>b.onclick=()=>{if(!confirm('Delete this adjustment?'))return;X.adj.splice(+b.dataset.da,1);re()});$('#sheet').querySelectorAll('[data-dp]').forEach(b=>b.onclick=()=>{if(!confirm('Delete this payment? The balance and carry-over will be recalculated.'))return;X.pay.splice(+b.dataset.dp,1);re()});
  $('#w_done').onclick=()=>{$('#modal').hidden=true}}
 async function showStorage(){const st=Store.status;await Store.persist();const el=$('#stinfo');if(!el)return;
- el.innerHTML=`<span class="pill">${st.persisted?'🔒 Protected from clearing':'⚠️ Browser may clear – install the app'}</span><span class="pill">${st.opfs?'✅':'—'} Data file</span><span class="pill">${st.idb?'✅':'—'} Database</span><span class="pill">${st.ls?'✅':'—'} Quick copy</span><br><small>Last saved: ${D._savedAt?new Date(D._savedAt).toLocaleString():'not yet'}</small>`;
+ let ni={};try{ni=NATIVE?JSON.parse(NATIVE.dataInfo()):{}}catch(e){}el.innerHTML=(NATIVE?`<span class="pill">${st.file?'✅':'—'} Phone data file (+ .old copy)</span><span class="pill">🗂️ ${ni.appBackups||0} app backups</span><span class="pill">📁 ${esc(ni.documentsDir||'')}</span>`:'')+`<span class="pill">${NATIVE?'🔒 Installed app storage':st.persisted?'🔒 Protected from clearing':'⚠️ Browser may clear – install the app'}</span><span class="pill">${st.opfs?'✅':'—'} Data file</span><span class="pill">${st.idb?'✅':'—'} Database</span><span class="pill">${st.ls?'✅':'—'} Quick copy</span><br><small>Last saved: ${D._savedAt?new Date(D._savedAt).toLocaleString():'not yet'}</small>`;
  const bks=await Store.listBackups();$('#bklist').innerHTML=`<p><b>Auto-backups (last ${bks.length} of 5)</b></p>`+bks.map(b=>`<div class="row"><small style="flex:3">${new Date(b.id.slice(3)).toLocaleString()}</small><button class="btn ghost" data-rb="${b.id}">Restore</button></div>`).join('');
  $('#bklist').querySelectorAll('[data-rb]').forEach(btn=>btn.onclick=()=>{const b=bks.find(x=>x.id===btn.dataset.rb);if(confirm('Restore this backup? Current data will be replaced.')){D=Object.assign(structuredClone(DEF),JSON.parse(b.json));migrate();save();render();toast('Restored ✅')}})}
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -235,6 +240,21 @@ addEventListener('pointerdown',e=>{if(RM)return;const c=e.target.closest('.kid,.
  const up=()=>{c.classList.remove('lift');c.style.removeProperty('--rx');c.style.removeProperty('--ry');removeEventListener('pointerup',up);removeEventListener('pointercancel',up)};addEventListener('pointerup',up);addEventListener('pointercancel',up)},{passive:true});
 addEventListener('scroll',()=>document.body.style.setProperty('--sy',scrollY),{passive:true});
 document.addEventListener('click',e=>{if(e.target.id!=='genst')return;const L=lastMonth(),n=genStatements(L.y,L.m);if(n){tab='bills';bview='month';bm=new Date(L.y,L.m,1);toast(`📄 ${n} statement${n>1?'s':''} saved`);render()}});
+const toLocal=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())};
+const fromLocal=v=>v?+new Date(v):null;
+function editVisit(vid,dr){const v=D.visits.find(x=>x.id===vid);if(!v)return;v.loc??=[];const k=kid(v.kid);
+ modal(`<h2>🕒 Edit visit</h2><p><b>${esc(k?.name||'?')}</b></p><label>Checked in</label><input id="v_in" type="datetime-local" value="${dr?dr.i:toLocal(v.in)}">
+ <label>Checked out <small>(blank = still here)</small></label><input id="v_out" type="datetime-local" value="${dr?dr.o:(v.out?toLocal(v.out):'')}">
+ <h3>School / home changes</h3>${v.loc.map((e,i)=>`<div class="row" data-li="${i}"><select data-lat="${i}"><option value="school" ${e.at==='school'?'selected':''}>🏫 To school</option><option value="home" ${e.at==='home'?'selected':''}>🏠 Back home</option></select><input type="datetime-local" data-lt="${i}" value="${toLocal(e.t)}"><button class="btn ghost sm" data-ldel="${i}">✕</button></div>`).join('')||'<small>None</small>'}
+ <button class="btn ghost" id="v_addloc">➕ Add school/home change</button><button class="btn" id="v_save">💾 Save changes</button><br><button class="btn out" id="v_del">🗑️ Delete this visit</button>`);
+ const collect=()=>{v.loc.forEach((e,i)=>{e.at=$(`[data-lat="${i}"]`).value;e.t=fromLocal($(`[data-lt="${i}"]`).value)||e.t})};
+ const draft=()=>({i:$('#v_in').value,o:$('#v_out').value});$('#v_addloc').onclick=()=>{collect();const d=draft(),last=v.loc[v.loc.length-1],st=fromLocal(d.i)||v.in;v.loc.push({t:Math.max(last?last.t:st,st),at:last?.at==='school'?'home':'school'});editVisit(vid,d)};
+ $('#sheet').querySelectorAll('[data-ldel]').forEach(b=>b.onclick=()=>{if(!confirm('Delete this school/home change?'))return;const d=draft();collect();v.loc.splice(+b.dataset.ldel,1);save();editVisit(vid,d);render()});
+ $('#v_save').onclick=()=>{const i=fromLocal($('#v_in').value),o=fromLocal($('#v_out').value);if(!i)return toast('Check-in time needed');if(o&&o<=i)return toast('Check-out must be after check-in');
+  if(!o&&D.visits.some(x=>x!==v&&x.kid===v.kid&&!x.out))return toast('This kid already has an open visit');collect();if(v.loc.some(e=>e.t<i||(o&&e.t>o)))return toast('School/home times must be inside the visit');
+  v.in=i;v.out=o;v.loc.sort((a,b)=>a.t-b.t);save();$('#modal').hidden=true;render();toast('Visit updated ✅')};
+ $('#v_del').onclick=()=>{if(!confirm(`Delete this visit for ${k?.name||'this kid'}? Bills and hours will be recalculated. Saved statements stay as they are until you regenerate them.`))return;
+  const idx=D.visits.indexOf(v);D.visits.splice(idx,1);save();$('#modal').hidden=true;render();toast('Visit deleted','Undo',()=>{D.visits.splice(idx,0,v);save();render()})}}
 // ---------- editors ----------
 function modal(html){$('#sheet').innerHTML=html;$('#modal').hidden=false}
 $('#modal').onclick=e=>{if(e.target.id==='modal')$('#modal').hidden=true};
@@ -248,13 +268,13 @@ function editFam(id,after){const f=fam(id),today=dkey(monday(Date.now())),cur=id
   Object.assign(o,{name:n,parent:$('#fp').value,phone:$('#fph').value});const from=$('#r_from').value||today,prev=pick(o.rates,from)||{};
   const changed=RKEYS.some(k=>(r[k]??null)!==(prev[k]??null));if(changed||window.__editFrom){r.from=from;o.rates=o.rates.filter(x=>x.from!==from&&x.from!==window.__editFrom).concat(r)}window.__editFrom=null;
   delete o.weekly;delete o.friday;delete o.perFamily;if(!id)D.families.push(o);save();$('#modal').hidden=true;after?after(o.id):render()};
- if(id)$('#fd').onclick=()=>{if(confirm('Delete family and its kids?')){const ks=D.kids.filter(k=>k.family===id).map(k=>k.id);D.kids=D.kids.filter(k=>k.family!==id);D.visits=D.visits.filter(v=>!ks.includes(v.kid));D.families=D.families.filter(x=>x.id!==id);save();$('#modal').hidden=true;render()}}}
+ if(id)$('#fd').onclick=()=>{if(confirm(`Delete the ${f.name} family? This also deletes ${D.kids.filter(k=>k.family===id).length} kid(s), all their visits and this family's bills. Saved statements are kept.`)){const ks=D.kids.filter(k=>k.family===id).map(k=>k.id);D.kids=D.kids.filter(k=>k.family!==id);D.visits=D.visits.filter(v=>!ks.includes(v.kid));D.families=D.families.filter(x=>x.id!==id);Object.keys(D.weeks||{}).forEach(w=>{if(w.startsWith(id+'|'))delete D.weeks[w]});save();$('#modal').hidden=true;render()}}}
 function editKid(id){if(!D.families.length)return editFam(null,()=>editKid());const k=kid(id)||{family:D.families[0].id};
  modal(`<h2>${id?'Edit':'New'} kid</h2><label>Name</label><input id="kn" value="${esc(k.name)}">
  <label>Family</label><select id="kf">${D.families.map(f=>`<option value="${f.id}" ${f.id===k.family?'selected':''}>${esc(f.name)}</option>`).join('')}</select>
  <label>Allergies / notes</label><textarea id="kno">${esc(k.notes)}</textarea><button class="btn" id="ks">Save</button>${id?'<br><button class="btn out" id="kd">Delete kid</button>':''}`);
  $('#ks').onclick=()=>{const n=$('#kn').value.trim();if(!n)return toast('Name needed');const o=id?k:{id:uid()};Object.assign(o,{name:n,family:$('#kf').value,notes:$('#kno').value});delete o.avatar;delete o.photo;if(!id)D.kids.push(o);save();$('#modal').hidden=true;render()};
- if(id)$('#kd').onclick=()=>{if(confirm('Delete '+k.name+'?')){D.kids=D.kids.filter(x=>x.id!==id);D.visits=D.visits.filter(v=>v.kid!==id);save();$('#modal').hidden=true;render()}}}
+ if(id)$('#kd').onclick=()=>{if(confirm(`Delete ${k.name} and all of ${k.name}'s visits? Bills and hours will be recalculated.`)){D.kids=D.kids.filter(x=>x.id!==id);D.visits=D.visits.filter(v=>v.kid!==id);save();$('#modal').hidden=true;render()}}}
 // ---------- boot ----------
 function invoiceView(){const m=location.hash.match(/^#invoice=(.+)$/);if(!m)return false;try{const b=b64d(m[1]);document.body.classList.add('readonly');document.querySelector('nav').style.display='none';$('#title').textContent=b.biz;
  V.innerHTML=invHtml(b)+`<button class="btn noprint" onclick="print()">🖨️ Print / Save PDF</button>`}catch(e){V.innerHTML='<div class="card">Invalid invoice link.</div>'}return true}
@@ -263,5 +283,5 @@ setInterval(()=>{$('#clock').textContent=new Date().toLocaleTimeString([],{hour:
 addEventListener('hashchange',()=>{if(!invoiceView())location.reload()});
 ready.then(()=>{if(!invoiceView())render()});
 addEventListener('visibilitychange',()=>{if(document.hidden)save()});
-if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
-window.__ls={D:()=>D,genStatements,lastMonth,setLoc,schoolMs,weekCalc,monthWeeks,weekBill,ledger,statement,rateAt,editWeek,invText,invLink,b64d,save:()=>save(),Store,ready,render};
+if(!NATIVE&&'serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js');
+window.__ls={D:()=>D,editVisit,genStatements,lastMonth,setLoc,schoolMs,weekCalc,monthWeeks,weekBill,ledger,statement,rateAt,editWeek,invText,invLink,b64d,save:()=>save(),Store,ready,render};
