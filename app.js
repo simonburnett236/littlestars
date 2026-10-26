@@ -17,6 +17,10 @@ const openVisit=k=>D.visits.find(v=>v.kid===k&&!v.out);
 const locOf=v=>v&&v.loc?.length?v.loc[v.loc.length-1].at:'home';
 function schoolMs(v,from=-Infinity,to=Infinity){let ms=0,st=null;const end=v.out||Date.now();(v.loc||[]).forEach(e=>{if(e.at==='school'&&st==null)st=e.t;else if(e.at==='home'&&st!=null){ms+=Math.max(0,Math.min(e.t,to)-Math.max(st,from));st=null}});if(st!=null)ms+=Math.max(0,Math.min(end,to)-Math.max(st,from));return ms}
 const totMs=v=>(v.out||Date.now())-v.in;
+function schIv(v){const r=[],end=v.out||Date.now();let st=null;(v.loc||[]).forEach(e=>{if(e.at==='school'&&st==null)st=e.t;else if(e.at==='home'&&st!=null){if(e.t>st)r.push([st,e.t]);st=null}});if(st!=null&&end>st)r.push([st,end]);return r}
+function sitIv(v){const end=v.out||Date.now(),r=[];let c=v.in;schIv(v).sort((a,b)=>a[0]-b[0]).forEach(([a,b])=>{if(a>c)r.push([c,Math.min(a,end)]);c=Math.max(c,b)});if(end>c)r.push([c,end]);return r}
+// union length of intervals: family time counts once even when siblings overlap
+function unionMs(iv){let t=0,ce=-Infinity;[...iv].sort((a,b)=>a[0]-b[0]).forEach(([a,b])=>{if(b<=ce)return;t+=b-Math.max(a,ce);ce=b});return t}
 function setLoc(id,at){const v=openVisit(id);if(!v||locOf(v)===at)return;(v.loc??=[]).push({t:Date.now(),at});save();toast(at==='school'?`🏫 ${kid(id).name} is at school`:`🏠 ${kid(id).name} is back home`);render()}
 window.toast=toast;function toast(m,act,fn){document.querySelectorAll('.toast').forEach(x=>x.remove());const t=document.createElement('div');t.className='toast';t.textContent=m;if(act){const b=document.createElement('button');b.className='undo';b.textContent=act;b.onclick=()=>{t.remove();fn()};t.append(' ',b)}document.body.append(t);setTimeout(()=>t.remove(),act?6000:2200)}
 // ---------- FX ----------
@@ -44,7 +48,7 @@ function rateAt(famId,mon){const day=dkey(mon),S=D.settings,g={...(pick(S.rates,
  RKEYS.forEach(k=>{if(fo[k]!==undefined&&fo[k]!==null&&fo[k]!=='')g[k]=fo[k]});return g}
 function weekCalc(famId,mon){const r=rateAt(famId,mon),end=addD(mon,7),kids=D.kids.filter(k=>k.family===famId);
  const kl=kids.map(k=>{const vs=D.visits.filter(v=>v.kid===k.id&&v.in>=+mon&&v.in<end);
-  return{name:k.name,ms:vs.reduce((s,v)=>s+totMs(v)-schoolMs(v),0),sms:vs.reduce((s,v)=>s+schoolMs(v),0),mt:vs.some(v=>{const d=new Date(v.in).getDay();return d>=1&&d<=4}),fr:vs.some(v=>new Date(v.in).getDay()===5)}});
+  return{name:k.name,siv:vs.flatMap(sitIv),civ:vs.flatMap(schIv),ms:vs.reduce((s,v)=>s+totMs(v)-schoolMs(v),0),sms:vs.reduce((s,v)=>s+schoolMs(v),0),mt:vs.some(v=>{const d=new Date(v.in).getDay();return d>=1&&d<=4}),fr:vs.some(v=>new Date(v.in).getDay()===5)}});
  const mt=r.perFamily?(kl.some(k=>k.mt)?1:0):kl.filter(k=>k.mt).length,fr=r.perFamily?(kl.some(k=>k.fr)?1:0):kl.filter(k=>k.fr).length;
  return{mon:+mon,mt,fr,r,kl,nk:Math.max(1,kids.length)}}
 const dueOf=(mon,r)=>addD(mon,7+((+r.dueDay+6)%7));
@@ -70,7 +74,7 @@ function ledger(famId){const ks=D.kids.filter(k=>k.family===famId).map(k=>k.id),
    const cr=open.filter(o=>o.rem<0);for(const c of cr){for(const o of open){if(c.rem>=0)break;if(o.rem>0){const t=Math.min(o.rem,-c.rem);o.rem-=t;c.rem+=t}}}
    w.totalDue=w.prev+w.charges;w.paid=w.pays.reduce((s,p)=>s+p.amt,0);w.balance=open.reduce((s,o)=>s+o.rem,0);w._me=me;out.push(w)}}
  out.forEach(w=>{w.weekRem=w._me.rem;w.status=w.totalDue<=0.004&&w.paid===0?'none':w.balance<=0.004?'paid':w.paid>0?'partial':Date.now()>w.due+DAY?'overdue':'unpaid'});return out}
-function kidsHrs(lists){const m={},sc={};lists.flat().forEach(k=>{m[k.name]=(m[k.name]||0)+k.ms;sc[k.name]=(sc[k.name]||0)+(k.sms||0)});const kids=Object.entries(m).map(([name,ms])=>({name,hrs:hrs(ms),school:hrs(sc[name])}));return{kids,totalHrs:hrs(Object.values(m).reduce((a,b)=>a+b,0)),schoolHrs:hrs(Object.values(sc).reduce((a,b)=>a+b,0))}}
+function kidsHrs(lists){const m={},sc={};const all=lists.flat();all.forEach(k=>{m[k.name]=(m[k.name]||0)+k.ms;sc[k.name]=(sc[k.name]||0)+(k.sms||0)});const kids=Object.entries(m).map(([name,ms])=>({name,hrs:hrs(ms),school:hrs(sc[name])}));return{kids,totalHrs:hrs(unionMs(all.flatMap(k=>k.siv||[]))),schoolHrs:hrs(unionMs(all.flatMap(k=>k.civ||[])))}}
 const monthWeeks=(famId,y,m)=>ledger(famId).filter(w=>{const d=new Date(w.mon);return d.getFullYear()===y&&d.getMonth()===m});
 const head=famId=>{const f=fam(famId);return{biz:D.settings.name,family:f.name,parent:f.parent}};
 function weekBill(famId,w){if(typeof w==='string')w=ledger(famId).find(x=>x.key===w);
@@ -92,8 +96,8 @@ function invText(b){const L=[];L.push(`⭐ ${b.biz} – ${b.kind==='statement'?'
  else{L.push(`Due: ${fmtD(b.due)} – ${ST[b.status]}`,'');b.prevLines.forEach(l=>L.push(`${l.label}: ${sgn(l.amt)}`));
   b.items.concat(b.adj).forEach(i=>L.push(`${i.label}: ${sgn(i.amt)}`));if(b.override!=null)L.push(`This week's total set to ${money(b.override)} (was ${money(b.sub)})`);
   L.push(`This week's charges: ${sgn(b.charges)}`,`TOTAL DUE by ${fmtD(b.due)}: ${sgn(b.totalDue)}`);b.pays.forEach(p=>L.push(`Payment ${fmtD(p.t)}${p.note?' ('+p.note+')':''}: −${money(p.amt)}`));if(b.pays.length)L.push(`Balance: ${sgn(b.balance)}`)}
- L.push('','Hours watched (sitter time):');b.kids.forEach(k=>L.push(`• ${k.name}: ${k.hrs} hrs`));L.push(`Total: ${b.totalHrs} hrs`,'','School vs Sitter time:');
- b.kids.forEach(k=>L.push(`• ${k.name}: sitter ${k.hrs} hrs · school ${k.school||0} hrs`));L.push(`Totals: sitter ${b.totalHrs} hrs · school ${b.schoolHrs||0} hrs`,'','Thank you! 💖');return L.join('\n')}
+ L.push('','Hours watched (sitter time):');b.kids.forEach(k=>L.push(`• ${k.name}: ${k.hrs} hrs`));L.push(`Family total: ${b.totalHrs} hrs (time any kid was here, overlap counted once)`,'','School vs Sitter time:');
+ b.kids.forEach(k=>L.push(`• ${k.name}: sitter ${k.hrs} hrs · school ${k.school||0} hrs`));L.push(`Family totals: sitter ${b.totalHrs} hrs · school ${b.schoolHrs||0} hrs`,'','Thank you! 💖');return L.join('\n')}
 const b64e=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const b64d=s=>JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/')))));
 const invLink=b=>location.origin+location.pathname+'#invoice='+b64e(b);
@@ -102,7 +106,7 @@ async function share(o){if(NATIVE){NATIVE.shareText(o.title||'Little Stars',o.ur
 const isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
 function sms(f,body){if(NATIVE&&f.phone){NATIVE.openUrl(`sms:${f.phone.replace(/[^\d+]/g,'')}?body=${encodeURIComponent(body)}`);return}if(isMobile&&f.phone){location.href=`sms:${f.phone.replace(/[^\d+]/g,'')}?&body=${encodeURIComponent(body)}`}else share({title:'Invoice',text:body})}
 const rowsH=(list,cls='')=>list.map(i=>`<tr class="${cls}${i.amt<0?' credit':''}"><td>${esc(i.label)}</td><td class="r">${sgn(i.amt)}</td></tr>`).join('');
-function hoursH(b){return `<div class="sscard"><b>⏱️ Hours · 🏠 Sitter vs 🏫 School</b><table data-ss><tr><th>Kid</th><th class="r">🏠 Sitter</th><th class="r">🏫 School</th></tr>${b.kids.map(k=>`<tr><td>${esc(k.name)}</td><td class="r">${k.hrs} hrs</td><td class="r">${k.school||0} hrs</td></tr>`).join('')}<tr><th>Total</th><th class="r" data-hrs>${b.totalHrs} hrs</th><th class="r" data-school>${b.schoolHrs||0} hrs</th></tr></table><small>Hours watched = sitter time only.</small></div>`}
+function hoursH(b){return `<div class="sscard"><b>⏱️ Hours · 🏠 Sitter vs 🏫 School</b><table data-ss><tr><th>Kid</th><th class="r">🏠 Sitter</th><th class="r">🏫 School</th></tr>${b.kids.map(k=>`<tr><td>${esc(k.name)}</td><td class="r">${k.hrs} hrs</td><td class="r">${k.school||0} hrs</td></tr>`).join('')}<tr><th>Family total</th><th class="r" data-hrs>${b.totalHrs} hrs</th><th class="r" data-school>${b.schoolHrs||0} hrs</th></tr></table><small>Hours watched = sitter time only. Family total counts the time any kid was here; overlapping siblings are counted once.</small></div>`}
 const headH=(b,sub)=>`<div class="row inv-head"><svg style="flex:0 0 52px;height:52px"><use href="#star"/></svg><div style="flex:4"><h2 style="margin:0">${esc(b.biz)}</h2><div>${sub}</div></div></div><p><b>${esc(b.family)} family</b>${b.parent?' · '+esc(b.parent):''}</p>`;
 function invHtml(b){if(b.kind==='statement')return stmtHtml(b);const over=b.status==='overdue';
  return `<div class="card invoice ${over?'overdue':''}">${headH(b,'Weekly invoice · '+esc(b.period))}
@@ -120,12 +124,14 @@ function stmtHtml(b){return `<div class="card invoice statement">${headH(b,'Mont
  <h3>Weekly charges</h3>${b.weeks.map(w=>`<table class="wk"><tr class="sep"><th>${esc(w.period)} <small>· due ${fmtD(w.due)} · ${ST[w.status]}</small></th><th></th></tr>${rowsH(w.items)}${rowsH(w.adj,'adj')}${w.override!=null?`<tr class="adj"><td>Week total set to (was ${money(w.sub)})</td><td class="r">${money(w.override)}</td></tr>`:''}<tr><td><b>Week charges</b></td><td class="r"><b>${sgn(w.charges)}</b></td></tr></table>`).join('')}
  <h3>Payments received</h3><table>${b.pays.map(p=>`<tr class="pay"><td>${fmtD(p.t)}${p.note?' · '+esc(p.note):''} <small>(week of ${esc(p.week)})</small></td><td class="r">−${money(p.amt)}</td></tr>`).join('')||'<tr><td>None this period</td><td></td></tr>'}</table>
  <table><tr class="tot"><th>New balance</th><th class="r">${sgn(b.balance)}</th></tr></table>${hoursH(b)}<p style="text-align:center">Thank you! 💖</p></div>`}
-function ssCard(rows,title){const ts=rows.reduce((a,r)=>a+r.sitter,0),tc=rows.reduce((a,r)=>a+r.school,0);
+function ssCard(rows,title){const fams=rows.fams||[],ts=fams.reduce((a,f)=>a+f.sitter,0),tc=fams.reduce((a,f)=>a+f.school,0);
+ const body=fams.map(f=>f.kids.map(r=>`<tr><td>${esc(r.name)}</td><td class="r">${r.sitter} hrs</td><td class="r">${r.school} hrs</td></tr>`).join('')+`<tr data-ss-fam><th>${esc(f.name)} family total</th><th class="r">${f.sitter} hrs</th><th class="r">${f.school} hrs</th></tr>`).join('');
  return `<div class="card sscard" data-ss><b>🏠 vs 🏫 School vs Sitter Time${title?' · '+esc(title):''}</b><table><tr><th>Kid</th><th class="r">🏠 Sitter</th><th class="r">🏫 School</th></tr>
- ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td class="r">${r.sitter} hrs</td><td class="r">${r.school} hrs</td></tr>`).join('')||'<tr><td colspan=3>No visits</td></tr>'}
- <tr><th>Total</th><th class="r" data-ss-sitter>${hrs(ts*36e5)} hrs</th><th class="r" data-ss-school>${hrs(tc*36e5)} hrs</th></tr></table><small>Sitter time = hours watched. School time is not counted.</small></div>`}
-function ssRows(from,to){const m={};D.visits.filter(v=>v.in>=from&&v.in<to).forEach(v=>{const sm=schoolMs(v),r=m[v.kid]??={name:kid(v.kid)?.name||'?',s:0,c:0};r.s+=totMs(v)-sm;r.c+=sm});
- return Object.values(m).map(r=>({name:r.name,sitter:hrs(r.s),school:hrs(r.c)}))}
+ ${body||'<tr><td colspan=3>No visits</td></tr>'}
+ ${fams.length>1?`<tr><th>All families (sum of family totals)</th><th class="r" data-ss-sitter>${hrs(ts*36e5)} hrs</th><th class="r" data-ss-school>${hrs(tc*36e5)} hrs</th></tr>`:`<tr hidden><th></th><th data-ss-sitter>${hrs(ts*36e5)} hrs</th><th data-ss-school>${hrs(tc*36e5)} hrs</th></tr>`}</table><small>Sitter time = hours watched. School time is not counted. Family totals count overlapping siblings once.</small></div>`}
+function ssRows(from,to){const m={},F={};D.visits.filter(v=>v.in>=from&&v.in<to).forEach(v=>{const k=kid(v.kid),sm=schoolMs(v),r=m[v.kid]??={name:k?.name||'?',s:0,c:0,fam:k?.family};r.s+=totMs(v)-sm;r.c+=sm;const g=F[k?.family]??={siv:[],civ:[]};g.siv.push(...sitIv(v));g.civ.push(...schIv(v))});
+ const rows=Object.values(m).map(r=>({name:r.name,fam:r.fam,sitter:hrs(r.s),school:hrs(r.c)}));
+ rows.fams=Object.entries(F).map(([id,g])=>({name:(D.families.find(f=>f.id===id)?.name)||'?',kids:rows.filter(r=>String(r.fam)===id),sitter:hrs(unionMs(g.siv)),school:hrs(unionMs(g.civ))}));return rows}
 const mkey=(y,m)=>y+'-'+pad(m+1),mname=(y,m)=>new Date(y,m,1).toLocaleString('en-US',{month:'long',year:'numeric'});
 function lastMonth(){const n=new Date();return{y:n.getMonth()?n.getFullYear():n.getFullYear()-1,m:(n.getMonth()+11)%12}}
 const monthDone=(y,m)=>Date.now()>=+new Date(y,m+1,1);
@@ -284,4 +290,4 @@ addEventListener('hashchange',()=>{if(!invoiceView())location.reload()});
 ready.then(()=>{if(!invoiceView())render()});
 addEventListener('visibilitychange',()=>{if(document.hidden)save()});
 if(!NATIVE&&'serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js');
-window.__ls={D:()=>D,editVisit,genStatements,lastMonth,setLoc,schoolMs,weekCalc,monthWeeks,weekBill,ledger,statement,rateAt,editWeek,invText,invLink,b64d,save:()=>save(),Store,ready,render};
+window.__ls={D:()=>D,ssRows,unionMs,sitIv,schIv,editVisit,genStatements,lastMonth,setLoc,schoolMs,weekCalc,monthWeeks,weekBill,ledger,statement,rateAt,editWeek,invText,invLink,b64d,save:()=>save(),Store,ready,render};
