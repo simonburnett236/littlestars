@@ -1,0 +1,120 @@
+/* Little Stars theme-pro essentials for past-due mockups */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:"Inter","Segoe UI",system-ui,sans-serif;color:#273046;
+  min-height:100vh;padding:18px 14px 28px;
+  --bg1:#eef1f6;--bg2:#e6e2ee;--acc:#5b6fa8;--acc2:#8a6fa8;--card:rgba(255,255,255,.78);--ink:#273046;
+  background:
+    radial-gradient(1200px 600px at 10% -10%,#d9e1f2 0,transparent 60%),
+    radial-gradient(900px 500px at 110% 20%,#eadff0 0,transparent 55%),
+    linear-gradient(160deg,#f4f5f9,#e9e7f0);
+  background-attachment:fixed;
+}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;z-index:-1;
+  background-image:radial-gradient(#27304622 1px,transparent 1px);background-size:22px 22px}
+
+.phone{
+  width:390px;margin:0 auto;border-radius:28px;overflow:hidden;
+  background:linear-gradient(160deg,#f4f5f9,#e9e7f0);
+  box-shadow:0 20px 60px #27304633,0 0 0 1px #27304614;
+  position:relative;min-height:760px;padding-bottom:78px;
+}
+.phone header{
+  display:flex;align-items:center;gap:10px;padding:14px 16px;
+  background:linear-gradient(120deg,#2c3654ee,#4a4f7aee);color:#fff;
+  border-radius:0 0 22px 22px;box-shadow:0 8px 30px #2730462e;
+}
+.phone header h1{margin:0;font-size:1.35rem;flex:1;font-weight:600;letter-spacing:.3px}
+.phone header .clock{font-weight:700;opacity:.9;font-size:.95rem}
+.logo{width:40px;height:40px;flex:0 0 40px}
+
+main{padding:12px 12px 8px}
+h2{margin:8px 4px 10px;font-size:1.15rem;font-weight:600}
+
+.card{
+  background:var(--card);backdrop-filter:blur(16px) saturate(140%);
+  border:1px solid #ffffffb0;border-radius:22px;padding:14px;margin-bottom:12px;
+  box-shadow:0 1px 0 #fff inset,0 2px 4px #27304610,0 10px 24px #27304618,0 24px 48px #27304612;
+}
+.invoice{position:relative}
+.invoice.overdue{border:4px solid #ff3b5c;animation:late 1.4s infinite}
+@keyframes late{50%{box-shadow:0 0 22px #ff3b5c}}
+
+.pill{display:inline-block;padding:4px 11px;border-radius:99px;background:#ffffffa0;border:1px solid #27304614;font-weight:600;font-size:.82rem;margin:2px}
+.pill.late,.st-overdue{background:#b4566a!important;color:#fff;border-color:transparent}
+.pill.paid,.st-paid{background:#5f9c83!important;color:#fff;border-color:transparent}
+.st-partial{background:#d1a85f!important;color:#fff;border-color:transparent}
+.st-unpaid{background:#ffffffa0;border:1px solid #27304622}
+.pill.calm,.st-upcoming{background:#5f9c8322!important;color:#3d6b5a;border:1px solid #5f9c8355}
+.pill.warn{background:#b4566a!important;color:#fff;border:0}
+
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+td,th{padding:7px 4px;text-align:left;border-bottom:1px solid #27304612}
+td.r,th.r{text-align:right}
+.invoice tr.prev td{color:#9b5f6f}
+.invoice tr.adj td{color:#7a6a9a;font-style:italic}
+.invoice tr.pay td{color:#4f8370}
+.invoice tr.tot th{font-size:1.05rem;border-top:2px solid #27304630}
+.invoice tr.tot th.r{color:var(--acc);font-size:1.25rem}
+.invoice tr.sep td,.invoice tr.sep th{background:#27304608}
+.inv-head{display:flex;gap:10px;align-items:center;margin-bottom:4px}
+.inv-head h2{margin:0;font-size:1.2rem}
+.inv-head .sub{opacity:.75;font-size:.88rem}
+
+nav{
+  position:absolute;bottom:0;left:0;right:0;display:flex;
+  background:rgba(255,255,255,.82);backdrop-filter:blur(16px);
+  box-shadow:0 -4px 20px #27304618;border-radius:24px 24px 0 0;
+  border-top:1px solid #ffffffb0;
+}
+nav button{flex:1;border:0;background:none;font-size:1.35rem;padding:8px 0 6px;color:var(--ink);border-radius:18px;margin:4px;font-family:inherit}
+nav button span{display:block;font-size:.68rem;font-weight:700}
+nav button.on{background:linear-gradient(135deg,#4b5d94,#6d5e95);color:#fff}
+
+/* ---- Proposed due-status treatments ---- */
+.amt-block{margin:12px 0 6px;padding:12px 14px;border-radius:16px;text-align:center}
+.amt-block .lbl{display:block;font-size:.78rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.75;margin-bottom:2px}
+.amt-block .amt{font-size:2rem;font-weight:800;letter-spacing:-.5px;line-height:1.1}
+.amt-block.calm{background:linear-gradient(145deg,#e8f4ef,#dceee6);border:1px solid #5f9c8340;color:#2f5f4d}
+.amt-block.calm .amt{color:#3d7a62;text-shadow:0 0 18px #5f9c8344}
+.amt-block.late{background:linear-gradient(145deg,#f8e6ea,#f3d5dc);border:1px solid #b4566a55;color:#8a3a4c}
+.amt-block.late .amt{color:#b4566a;text-shadow:0 0 18px #b4566a44}
+.amt-block.mixed{background:linear-gradient(145deg,#ffffffaa,#f3f0f8);border:1px solid #27304618}
+.amt-block.broken{background:#ffffff90;border:1px solid #27304618}
+.amt-block.broken .amt{color:var(--acc)}
+
+.split{
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 4px;
+}
+.split>div{border-radius:14px;padding:10px 12px;box-shadow:inset 0 1px 0 #fff,0 4px 10px #2730460f}
+.split small{display:block;opacity:.75;font-weight:600;font-size:.72rem;letter-spacing:.3px;text-transform:uppercase}
+.split b{font-size:1.15rem}
+.split .past{background:#f8e6ea;border:1px solid #b4566a40;color:#8a3a4c}
+.split .past b{color:#b4566a}
+.split .soon{background:#e8f4ef;border:1px solid #5f9c8340;color:#2f5f4d}
+.split .soon b{color:#3d7a62}
+.split .soon .when{display:block;font-size:.78rem;font-weight:600;opacity:.85;margin-top:2px;text-transform:none;letter-spacing:0}
+
+.due-line{text-align:center;font-size:.9rem;opacity:.85;margin:4px 0 8px}
+.due-line b{font-weight:700}
+
+.caption{
+  width:390px;margin:14px auto 0;padding:12px 14px;border-radius:14px;
+  background:#273046e8;color:#fff;font-size:.88rem;line-height:1.35;
+  box-shadow:0 8px 24px #27304633;
+}
+.caption b{color:#f3e3b8}
+.tag{
+  width:390px;margin:0 auto 10px;font-size:.72rem;font-weight:800;letter-spacing:1px;
+  text-transform:uppercase;opacity:.55;
+}
+
+.btnrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.btn{
+  display:block;width:100%;border:0;border-radius:16px;padding:11px;font-size:.92rem;font-weight:600;
+  color:#fff;font-family:inherit;
+  background:linear-gradient(180deg,#6577ad 0%,#4b5d94 55%,#41517f 100%);
+  box-shadow:inset 0 1px 0 #ffffff55,0 4px 0 #36436b,0 8px 14px #4b5d9455;
+}
+.btn.ghost{background:#ffffff80;color:var(--ink);border:1px solid #27304618;box-shadow:inset 0 1px 0 #fff,0 3px 0 #27304614}

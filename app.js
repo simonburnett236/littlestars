@@ -41,6 +41,7 @@ function toggle(id,ev){const o=openVisit(id),r=ev?.currentTarget?.getBoundingCli
 // ---------- billing ----------
 // All amounts come from D.settings.rates (history, defaults in DEF) or family overrides – nothing hardcoded here.
 const DAY=864e5,addD=(t,n)=>{const d=new Date(t);d.setDate(d.getDate()+n);return +d},hrs=ms=>Math.round(ms/36e5*10)/10;
+let _now=null;const now=()=>_now??Date.now();const setNow=t=>{_now=t==null?null:+t};const isPastDue=due=>now()>due+DAY;
 const fmtD=d=>new Date(d).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 const DOW=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const RKEYS=['weekly','cap','friday','dueDay','perFamily'];
@@ -66,39 +67,49 @@ function monthWeeksRaw(famId,y,m){let used=0;return mondaysOf(y,m).map(mon=>{con
 // Ledger over all time with FIFO payment allocation (oldest balance first); unpaid amounts carry into later weeks.
 function ledger(famId){const ks=D.kids.filter(k=>k.family===famId).map(k=>k.id),times=D.visits.filter(v=>ks.includes(v.kid)).map(v=>v.in);
  Object.keys(D.weeks||{}).filter(k=>k.startsWith(famId+'|')).forEach(k=>times.push(+new Date(k.split('|')[1]+'T12:00')));
- const now=Date.now();if(!times.length)times.push(now);let d=new Date(Math.min(...times));d=new Date(d.getFullYear(),d.getMonth(),1);
- const last=new Date(Math.max(now,...times)),out=[],open=[];
+ const t0=now();if(!times.length)times.push(t0);let d=new Date(Math.min(...times));d=new Date(d.getFullYear(),d.getMonth(),1);
+ const last=new Date(Math.max(t0,...times)),out=[],open=[];
  for(;d<=last||(d.getFullYear()===last.getFullYear()&&d.getMonth()===last.getMonth());d=new Date(d.getFullYear(),d.getMonth()+1,1)){
-  for(const w of monthWeeksRaw(famId,d.getFullYear(),d.getMonth())){w.prevLines=open.filter(o=>o.rem>0.004).map(o=>({label:`Previous balance (week of ${fmtD(o.mon)}, ${o.rem<o.charges?'partly paid':'unpaid'})`,amt:o.rem,mon:o.mon}));
-   w.prev=w.prevLines.reduce((s,l)=>s+l.amt,0);const me={key:w.key,mon:w.mon,charges:w.charges,rem:w.charges};open.push(me);
+  for(const w of monthWeeksRaw(famId,d.getFullYear(),d.getMonth())){
+   w.prevLines=open.filter(o=>o.rem>0.004).map(o=>{const late=isPastDue(o.due);const tag=late?' · past due':(o.rem<o.charges?', partly paid':', unpaid');return{label:`Previous balance (week of ${fmtD(o.mon)}${tag})`,amt:o.rem,mon:o.mon,due:o.due,pastDue:late}});
+   w.prev=w.prevLines.reduce((s,l)=>s+l.amt,0);const me={key:w.key,mon:w.mon,due:w.due,charges:w.charges,rem:w.charges};open.push(me);
    let extra=0;for(const p of w.pays){let a=p.amt;for(const o of open){if(a<=0)break;const t=Math.min(o.rem,a);o.rem-=t;a-=t}extra+=a}
-   if(extra>0)open.push({key:w.key+'#credit',mon:w.mon,charges:-extra,rem:-extra});// overpayment -> credit
+   if(extra>0)open.push({key:w.key+'#credit',mon:w.mon,due:w.due,charges:-extra,rem:-extra});// overpayment -> credit
    // net credits against later charges
    const cr=open.filter(o=>o.rem<0);for(const c of cr){for(const o of open){if(c.rem>=0)break;if(o.rem>0){const t=Math.min(o.rem,-c.rem);o.rem-=t;c.rem+=t}}}
-   w.totalDue=w.prev+w.charges;w.paid=w.pays.reduce((s,p)=>s+p.amt,0);w.balance=open.reduce((s,o)=>s+o.rem,0);w._me=me;out.push(w)}}
- out.forEach(w=>{w.weekRem=w._me.rem;w.status=w.totalDue<=0.004&&w.paid===0?'none':w.balance<=0.004?'paid':w.paid>0?'partial':Date.now()>w.due+DAY?'overdue':'unpaid'});return out}
+   w.totalDue=w.prev+w.charges;w.paid=w.pays.reduce((s,p)=>s+p.amt,0);w.balance=open.reduce((s,o)=>s+o.rem,0);
+   // Amount due = past-due remaining ONLY (never inflate with not-yet-due / coming-due)
+   w.pastDue=open.reduce((s,o)=>s+(o.rem>0.004&&isPastDue(o.due)?o.rem:0),0);
+   w.comingDue=open.reduce((s,o)=>s+(o.rem>0.004&&!isPastDue(o.due)?o.rem:0),0);
+   w.amountDue=w.pastDue;w._me=me;out.push(w)}}
+ out.forEach(w=>{w.weekRem=w._me.rem;w.status=w.totalDue<=0.004&&w.paid===0?'none':w.balance<=0.004?'paid':w.paid>0?'partial':w.pastDue>0.004&&w.comingDue<=0.004?'overdue':'unpaid'});return out}
 function kidsHrs(lists){const m={},sc={};const all=lists.flat();all.forEach(k=>{m[k.name]=(m[k.name]||0)+k.ms;sc[k.name]=(sc[k.name]||0)+(k.sms||0)});const kids=Object.entries(m).map(([name,ms])=>({name,hrs:hrs(ms),school:hrs(sc[name])}));return{kids,totalHrs:hrs(famMax(all,'sd')),schoolHrs:hrs(famMax(all,'cd'))}}
 const monthWeeks=(famId,y,m)=>ledger(famId).filter(w=>{const d=new Date(w.mon);return d.getFullYear()===y&&d.getMonth()===m});
 const head=famId=>{const f=fam(famId);return{biz:D.settings.name,family:f.name,parent:f.parent}};
 function weekBill(famId,w){if(typeof w==='string')w=ledger(famId).find(x=>x.key===w);
  return{kind:'week',...head(famId),period:`Week of ${fmtD(w.mon)} – ${fmtD(addD(w.mon,4))}`,due:w.due,dueDay:DOW[new Date(w.due).getDay()],prevLines:w.prevLines,items:w.items,adj:w.adj,override:w.override,sub:w.sub,charges:w.charges,
-  totalDue:w.totalDue,pays:w.pays,paid:w.paid,balance:w.balance,status:w.status,...kidsHrs([w.kl])}}
+  totalDue:w.totalDue,pays:w.pays,paid:w.paid,balance:w.balance,pastDue:w.pastDue,comingDue:w.comingDue,amountDue:w.amountDue,status:w.status,...kidsHrs([w.kl])}}
 function statement(famId,y,m){const all=ledger(famId),ws=all.filter(w=>{const d=new Date(w.mon);return d.getFullYear()===y&&d.getMonth()===m});
  const first=ws[0],prev=first?first.prev:0,charges=ws.reduce((s,w)=>s+w.charges,0),paid=ws.reduce((s,w)=>s+w.paid,0),last=ws[ws.length-1];
+ const pastDue=last?last.pastDue:(first?first.pastDue:0),comingDue=last?last.comingDue:0;
  return{kind:'statement',...head(famId),period:new Date(y,m,1).toLocaleString('en-US',{month:'long',year:'numeric'})+' statement',
   from:+new Date(y,m,1),to:+new Date(y,m+1,0),prev,prevLines:first?first.prevLines:[],charges,paid,balance:last?last.balance:prev,due:last?last.due:null,
-  weeks:ws.map(w=>({period:`Week of ${fmtD(w.mon)}`,due:w.due,items:w.items,adj:w.adj,override:w.override,sub:w.sub,charges:w.charges,status:w.status})),
+  pastDue,comingDue,amountDue:pastDue,
+  weeks:ws.map(w=>({period:`Week of ${fmtD(w.mon)}`,due:w.due,items:w.items,adj:w.adj,override:w.override,sub:w.sub,charges:w.charges,status:w.status,pastDue:w.pastDue,comingDue:w.comingDue})),
   pays:ws.flatMap(w=>w.pays.map(p=>({...p,week:fmtD(w.mon)}))).sort((a,b)=>a.t-b.t),...kidsHrs(ws.map(w=>w.kl))}}
-const ST={paid:'✅ Paid',partial:'◐ Partly paid',overdue:'⏰ Overdue',unpaid:'🕒 Unpaid',none:'Nothing owed'};
+const ST={paid:'✅ Paid',partial:'◐ Partly paid',overdue:'⏰ Past due',unpaid:'🕒 Unpaid',none:'Nothing owed'};
 const sgn=a=>a<0?'−'+money(-a):money(a);
 function invText(b){const L=[];L.push(`⭐ ${b.biz} – ${b.kind==='statement'?'Monthly Statement':'Weekly Invoice'}`,`${b.family} family · ${b.period}`);
- if(b.kind==='statement'){L.push(`${fmtD(b.from)} – ${fmtD(b.to)}`,'',`Previous balance: ${sgn(b.prev)}`,`New charges: ${sgn(b.charges)}`,`Payments: −${money(b.paid)}`,`NEW BALANCE: ${sgn(b.balance)}${b.due&&b.balance>0?' – due '+fmtD(b.due):''}`,'');
+ if(b.kind==='statement'){L.push(`${fmtD(b.from)} – ${fmtD(b.to)}`,'',`Previous balance: ${sgn(b.prev)}`,`New charges: ${sgn(b.charges)}`,`Payments: −${money(b.paid)}`,`NEW BALANCE: ${sgn(b.balance)}${b.due&&b.balance>0?' – due '+fmtD(b.due):''}`);
+  if((b.pastDue||0)>0.004||(b.comingDue||0)>0.004)L.push(`AMOUNT DUE (past due only): ${sgn(b.amountDue??b.pastDue??0)}`);L.push('');
   b.prevLines.forEach(l=>L.push(`${l.label}: ${sgn(l.amt)}`));
   b.weeks.forEach(w=>{L.push(`${w.period} (due ${fmtD(w.due)}) – ${ST[w.status]}`);w.items.concat(w.adj).forEach(i=>L.push(`  ${i.label}: ${sgn(i.amt)}`));if(w.override!=null)L.push(`  Week total set to ${money(w.override)} (was ${money(w.sub)})`);L.push(`  Week charges: ${sgn(w.charges)}`)});
   if(b.pays.length){L.push('','Payments received:');b.pays.forEach(p=>L.push(`  ${fmtD(p.t)}: ${money(p.amt)}${p.note?' – '+p.note:''}`))}}
  else{L.push(`Due: ${fmtD(b.due)} – ${ST[b.status]}`,'');b.prevLines.forEach(l=>L.push(`${l.label}: ${sgn(l.amt)}`));
   b.items.concat(b.adj).forEach(i=>L.push(`${i.label}: ${sgn(i.amt)}`));if(b.override!=null)L.push(`This week's total set to ${money(b.override)} (was ${money(b.sub)})`);
-  L.push(`This week's charges: ${sgn(b.charges)}`,`TOTAL DUE by ${fmtD(b.due)}: ${sgn(b.totalDue)}`);b.pays.forEach(p=>L.push(`Payment ${fmtD(p.t)}${p.note?' ('+p.note+')':''}: −${money(p.amt)}`));if(b.pays.length)L.push(`Balance: ${sgn(b.balance)}`)}
+  L.push(`This week's charges: ${sgn(b.charges)}`,`TOTAL DUE by ${fmtD(b.due)}: ${sgn(b.totalDue)}`);
+  if((b.pastDue||0)>0.004||(b.comingDue||0)>0.004){L.push(`AMOUNT DUE (past due only): ${sgn(b.amountDue??b.pastDue??0)}`);if((b.comingDue||0)>0.004)L.push(`Coming due by ${fmtD(b.due)}: ${sgn(b.comingDue)}`)}
+  b.pays.forEach(p=>L.push(`Payment ${fmtD(p.t)}${p.note?' ('+p.note+')':''}: −${money(p.amt)}`));if(b.pays.length)L.push(`Balance: ${sgn(b.balance)}`)}
  L.push('','Hours watched (sitter time):');b.kids.forEach(k=>L.push(`• ${k.name}: ${k.hrs} hrs`));L.push(`Family total (longest kid each day): ${b.totalHrs} hrs`,'','School vs Sitter time:');
  b.kids.forEach(k=>L.push(`• ${k.name}: sitter ${k.hrs} hrs · school ${k.school||0} hrs`));L.push(`Family totals (longest kid each day): sitter ${b.totalHrs} hrs · school ${b.schoolHrs||0} hrs`,'','Thank you! 💖');return L.join('\n')}
 const b64e=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -111,18 +122,40 @@ function sms(f,body){if(NATIVE&&f.phone){NATIVE.openUrl(`sms:${f.phone.replace(/
 const rowsH=(list,cls='')=>list.map(i=>`<tr class="${cls}${i.amt<0?' credit':''}"><td>${esc(i.label)}</td><td class="r">${sgn(i.amt)}</td></tr>`).join('');
 function hoursH(b){return `<div class="sscard"><b>⏱️ Hours · 🏠 Sitter vs 🏫 School</b><table data-ss><tr><th>Kid</th><th class="r">🏠 Sitter</th><th class="r">🏫 School</th></tr>${b.kids.map(k=>`<tr><td>${esc(k.name)}</td><td class="r">${k.hrs} hrs</td><td class="r">${k.school||0} hrs</td></tr>`).join('')}<tr><th>Family total (longest kid each day)</th><th class="r" data-hrs>${b.totalHrs} hrs</th><th class="r" data-school>${b.schoolHrs||0} hrs</th></tr></table><small>Hours watched = sitter time only. Family total = the longest any one kid stayed each day, added up; siblings are not added together.</small></div>`}
 const headH=(b,sub)=>`<div class="row inv-head"><svg style="flex:0 0 52px;height:52px"><use href="#star"/></svg><div style="flex:4"><h2 style="margin:0">${esc(b.biz)}</h2><div>${sub}</div></div></div><p><b>${esc(b.family)} family</b>${b.parent?' · '+esc(b.parent):''}</p>`;
-function invHtml(b){if(b.kind==='statement')return stmtHtml(b);const over=b.status==='overdue';
+function duePill(b){const past=+(b.pastDue||0),coming=+(b.comingDue||0),bal=+(b.balance||0);
+ if(bal<=0.004)return `<span class="pill st-paid" data-status>${ST.paid}</span>`;
+ if(past>0.004&&coming>0.004){const w=past%1?money(past):("$"+Math.round(past));return `<span class="pill warn" data-status>⚠ ${w} past due</span>`}
+ if(past>0.004){const since=(b.prevLines||[]).filter(l=>l.pastDue).map(l=>l.due).sort((a,c)=>a-c)[0]||b.due;return `<span class="pill late st-overdue" data-status>⏰ Past due · since ${fmtD(since)}</span>`}
+ if(b.paid>0)return `<span class="pill st-partial" data-status>${ST.partial}</span>`;
+ if(coming>0.004||b.status==='unpaid')return `<span class="pill calm st-upcoming" data-status>📅 Due ${fmtD(b.due)}</span>`;
+ return `<span class="pill st-${b.status}" data-status>${ST[b.status]||b.status}</span>`}
+function amtHero(b){const past=+(b.pastDue||0),coming=+(b.comingDue||0),bal=+(b.balance||0),amt=+(b.amountDue!=null?b.amountDue:past);
+ if(bal<=0.004)return `<div class="amt-block calm"><span class="lbl">Balance</span><div class="amt" data-total data-amountdue>${sgn(bal)}</div></div>`;
+ if(past>0.004&&coming>0.004)return `<div class="split noprint"><div class="past"><small>Past due</small><b data-pastdue>${sgn(past)}</b></div><div class="soon"><small>Coming due</small><b data-comingdue>${sgn(coming)}</b><span class="when">${fmtD(b.due)}</span></div></div>
+ <div class="amt-block mixed"><div><span class="lbl late-lbl">Past due</span><div class="amt late-amt" data-total data-amountdue>${sgn(amt)}</div></div><div><span class="lbl calm-lbl">Coming due</span><div class="amt calm-amt">${sgn(coming)}</div><div class="when">by ${fmtD(b.due)}</div></div></div>
+ <div class="due-line">Combined on the bill: <b data-combined>${sgn(bal)}</b> — only <b class="late-amt">${money(past)}</b> is late</div>`;
+ if(past>0.004){const since=(b.prevLines||[]).filter(l=>l.pastDue).map(l=>l.due).sort((a,c)=>a-c)[0]||b.due;return `<div class="amt-block late"><span class="lbl">Past due</span><div class="amt" data-total data-amountdue>${sgn(amt)}</div></div><div class="due-line late-line">Was due <b>${fmtD(since)}</b></div>`}
+ return `<div class="amt-block calm"><span class="lbl">Not due yet</span><div class="amt" data-comingdue>${sgn(coming||bal)}</div></div><div class="due-line">Total due by <b data-due>${fmtD(b.due)}</b></div><span hidden data-total data-amountdue>${sgn(amt)}</span>`}
+function invHtml(b){if(b.kind==='statement')return stmtHtml(b);
+ const past=+(b.pastDue||0),coming=+(b.comingDue||0),bal=+(b.balance||0);
+ const mixed=past>0.004&&coming>0.004,over=past>0.004&&coming<=0.004&&bal>0.004;
+ const totLabel=mixed||(past>0.004&&bal>0.004)?'Combined balance':`Total due by ${fmtD(b.due)}`;
+ const totVal=mixed||past>0.004?bal:b.totalDue;
  return `<div class="card invoice ${over?'overdue':''}">${headH(b,'Weekly invoice · '+esc(b.period))}
- <p><span class="pill st-${b.status}" data-status>${ST[b.status]}</span> Due <b data-due>${fmtD(b.due)}</b></p>
+ <p>${duePill(b)}${mixed||over?'':` <span class="due-inline">Due <b data-due>${fmtD(b.due)}</b></span>`}</p>
  <table>${rowsH(b.prevLines,'prev')}${b.prevLines.length?`<tr class="sep"><td colspan=2><small>This week</small></td></tr>`:''}${rowsH(b.items)||'<tr><td>No billable days</td><td class="r">$0.00</td></tr>'}${rowsH(b.adj,'adj')}
  ${b.override!=null?`<tr class="adj"><td>Week total set to (was ${money(b.sub)})</td><td class="r">${money(b.override)}</td></tr>`:''}
  <tr><td><b>This week's charges</b></td><td class="r" data-charges><b>${sgn(b.charges)}</b></td></tr>
- <tr class="tot"><th>Total due by ${fmtD(b.due)}</th><th class="r" data-total>${sgn(b.totalDue)}</th></tr>
+ <tr class="tot"><th>${totLabel}</th><th class="r" data-combined-row>${sgn(totVal)}</th></tr>
  ${b.pays.map(p=>`<tr class="pay"><td>Payment ${fmtD(p.t)}${p.note?' · '+esc(p.note):''}</td><td class="r">−${money(p.amt)}</td></tr>`).join('')}
  ${b.pays.length?`<tr class="tot"><th>Balance</th><th class="r" data-balance>${sgn(b.balance)}</th></tr>`:''}</table>
+ ${amtHero(b)}
  ${hoursH(b)}<p style="text-align:center">Thank you! 💖</p></div>`}
-function stmtHtml(b){return `<div class="card invoice statement">${headH(b,'Monthly statement · '+fmtD(b.from)+' – '+fmtD(b.to))}
- <div class="sumgrid"><div><small>Previous balance</small><b data-prev>${sgn(b.prev)}</b></div><div><small>New charges</small><b data-newch>${sgn(b.charges)}</b></div><div><small>Payments</small><b data-pays>−${money(b.paid)}</b></div><div class="hl"><small>${b.balance>0?'Amount due':'Balance'}</small><b data-total>${sgn(b.balance)}</b>${b.due&&b.balance>0?`<small>by ${fmtD(b.due)}</small>`:''}</div></div>
+function stmtHtml(b){const past=+(b.amountDue!=null?b.amountDue:(b.pastDue||0)),bal=+(b.balance||0),coming=+(b.comingDue||0);
+ const dueAmt=bal<=0.004?bal:past; // Amount due = past-due only
+ const dueLbl=bal<=0.004?'Balance':(past>0.004?'Amount due':(coming>0.004?'Not due yet':'Balance'));
+ return `<div class="card invoice statement">${headH(b,'Monthly statement · '+fmtD(b.from)+' – '+fmtD(b.to))}
+ <div class="sumgrid"><div><small>Previous balance</small><b data-prev>${sgn(b.prev)}</b></div><div><small>New charges</small><b data-newch>${sgn(b.charges)}</b></div><div><small>Payments</small><b data-pays>−${money(b.paid)}</b></div><div class="hl ${past>0.004?'hl-late':coming>0.004?'hl-calm':''}"><small>${dueLbl}</small><b data-total data-amountdue>${sgn(dueAmt)}</b>${past>0.004&&coming>0.004?`<small>past due · ${money(coming)} coming</small>`:(b.due&&coming>0.004&&past<=0.004?`<small>by ${fmtD(b.due)}</small>`:(b.due&&past>0.004?`<small>past due</small>`:''))}</div>${bal>0.004&&(past>0.004||coming>0.004)?`<div><small>Combined balance</small><b data-balance>${sgn(bal)}</b></div>`:''}</div>
  ${b.prevLines.length?`<h3>Carried in</h3><table>${rowsH(b.prevLines,'prev')}</table>`:''}
  <h3>Weekly charges</h3>${b.weeks.map(w=>`<table class="wk"><tr class="sep"><th>${esc(w.period)} <small>· due ${fmtD(w.due)} · ${ST[w.status]}</small></th><th></th></tr>${rowsH(w.items)}${rowsH(w.adj,'adj')}${w.override!=null?`<tr class="adj"><td>Week total set to (was ${money(w.sub)})</td><td class="r">${money(w.override)}</td></tr>`:''}<tr><td><b>Week charges</b></td><td class="r"><b>${sgn(w.charges)}</b></td></tr></table>`).join('')}
  <h3>Payments received</h3><table>${b.pays.map(p=>`<tr class="pay"><td>${fmtD(p.t)}${p.note?' · '+esc(p.note):''} <small>(week of ${esc(p.week)})</small></td><td class="r">−${money(p.amt)}</td></tr>`).join('')||'<tr><td>None this period</td><td></td></tr>'}</table>
@@ -136,8 +169,8 @@ function ssRows(from,to){const m={},F={};D.visits.filter(v=>v.in>=from&&v.in<to)
  const rows=Object.values(m).map(r=>({name:r.name,fam:r.fam,sitter:hrs(r.s),school:hrs(r.c)}));
  rows.fams=Object.entries(F).map(([id,g])=>({name:(D.families.find(f=>f.id===id)?.name)||'?',kids:rows.filter(r=>String(r.fam)===id),sitter:hrs(famMax(Object.values(g),'sd')),school:hrs(famMax(Object.values(g),'cd'))}));return rows}
 const mkey=(y,m)=>y+'-'+pad(m+1),mname=(y,m)=>new Date(y,m,1).toLocaleString('en-US',{month:'long',year:'numeric'});
-function lastMonth(){const n=new Date();return{y:n.getMonth()?n.getFullYear():n.getFullYear()-1,m:(n.getMonth()+11)%12}}
-const monthDone=(y,m)=>Date.now()>=+new Date(y,m+1,1);
+function lastMonth(){const n=new Date(now());return{y:n.getMonth()?n.getFullYear():n.getFullYear()-1,m:(n.getMonth()+11)%12}}
+const monthDone=(y,m)=>now()>=+new Date(y,m+1,1);
 function genStatements(y,m){if(!monthDone(y,m)){toast(mname(y,m)+' is not finished yet');return 0}D.statements??={};let n=0;
  D.families.forEach(f=>{const k=f.id+'|'+mkey(y,m),old=D.statements[k];D.statements[k]={fam:f.id,month:mkey(y,m),at:Date.now(),version:(old?.version||0)+1,b:statement(f.id,y,m)};n++});save();return n}
 function stmtBanner(){const {y,m}=lastMonth();if(!D.families.length)return '';const missing=D.families.filter(f=>!D.statements?.[f.id+'|'+mkey(y,m)]);if(!missing.length)return '';
@@ -293,4 +326,4 @@ addEventListener('hashchange',()=>{if(!invoiceView())location.reload()});
 ready.then(()=>{if(!invoiceView())render()});
 addEventListener('visibilitychange',()=>{if(document.hidden)save()});
 if(!NATIVE&&'serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js');
-window.__ls={D:()=>D,ssRows,famMax,unionMs,sitIv,schIv,editVisit,genStatements,lastMonth,setLoc,schoolMs,weekCalc,monthWeeks,weekBill,ledger,statement,rateAt,editWeek,invText,invLink,b64d,save:()=>save(),Store,ready,render};
+window.__ls={D:()=>D,ssRows,famMax,unionMs,sitIv,schIv,editVisit,genStatements,lastMonth,setLoc,schoolMs,weekCalc,monthWeeks,weekBill,ledger,statement,rateAt,editWeek,invText,invLink,invHtml,b64d,setNow,now,save:()=>save(),Store,ready,render};

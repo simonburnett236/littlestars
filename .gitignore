@@ -1,2 +1,6 @@
 shots/
 test.mjs
+
+node_modules/
+package.json
+package-lock.json

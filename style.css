@@ -109,3 +109,35 @@ main.enter{animation:enter .35s cubic-bezier(.2,.8,.2,1)}@keyframes enter{from{o
 .upcoming{margin:6px 0;padding:8px 12px;border-radius:12px;background:#d1a85f22}.rh tr.up td{background:#d1a85f14}
 [data-key] .btn.primary{grid-column:1/-1;font-size:1.1rem;min-height:56px;background:linear-gradient(180deg,#6fae93,#4f8370);box-shadow:inset 0 1px 0 #ffffff55,0 4px 0 #3c6656,0 8px 18px #4f837055}
 .toast .undo{margin-left:10px;border:0;border-radius:99px;padding:8px 14px;font-weight:700;background:#f3e3b8;color:#273046;min-height:36px}.vrow{cursor:pointer}.editv{display:block;margin:8px auto 0}
+
+/* Past-due vs not-yet-due bill cards (v1.0.4) */
+.pill.calm,.st-upcoming{background:#5f9c8322!important;color:#3d6b5a;border:1px solid #5f9c8355}
+.pill.warn{background:#b4566a!important;color:#fff;border:0}
+.theme-pro .pill.calm,.theme-pro .st-upcoming{background:#5f9c8322!important;color:#3d6b5a;border:1px solid #5f9c8355}
+.theme-pro .pill.warn{background:#b4566a!important;color:#fff;border:0}
+.amt-block{margin:12px 0 6px;padding:12px 14px;border-radius:16px;text-align:center}
+.amt-block .lbl{display:block;font-size:.78rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.75;margin-bottom:2px}
+.amt-block .amt{font-size:2rem;font-weight:800;letter-spacing:-.5px;line-height:1.1}
+.amt-block.calm{background:linear-gradient(145deg,#e8f4ef,#dceee6);border:1px solid #5f9c8340;color:#2f5f4d}
+.amt-block.calm .amt{color:#3d7a62;text-shadow:0 0 18px #5f9c8344}
+.amt-block.late{background:linear-gradient(145deg,#f8e6ea,#f3d5dc);border:1px solid #b4566a55;color:#8a3a4c}
+.amt-block.late .amt{color:#b4566a;text-shadow:0 0 18px #b4566a44}
+.amt-block.mixed{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;padding:10px 12px;background:linear-gradient(145deg,#ffffffaa,#f3f0f8);border:1px solid #27304618}
+.amt-block.mixed .amt{font-size:1.45rem}
+.amt-block .late-lbl{color:#8a3a4c}.amt-block .late-amt,.late-amt{color:#b4566a}
+.amt-block .calm-lbl{color:#2f5f4d}.amt-block .calm-amt{color:#3d7a62}
+.amt-block .when{font-size:.78rem;opacity:.8;margin-top:2px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 4px}
+.split>div{border-radius:14px;padding:10px 12px;box-shadow:inset 0 1px 0 #fff,0 4px 10px #2730460f}
+.split small{display:block;opacity:.75;font-weight:600;font-size:.72rem;letter-spacing:.3px;text-transform:uppercase}
+.split b{font-size:1.15rem}
+.split .past{background:#f8e6ea;border:1px solid #b4566a40;color:#8a3a4c}
+.split .past b{color:#b4566a}
+.split .soon{background:#e8f4ef;border:1px solid #5f9c8340;color:#2f5f4d}
+.split .soon b{color:#3d7a62}
+.split .soon .when{display:block;font-size:.78rem;font-weight:600;opacity:.85;margin-top:2px;text-transform:none;letter-spacing:0}
+.due-line{text-align:center;font-size:.9rem;opacity:.85;margin:4px 0 8px}
+.due-line.late-line{color:#8a3a4c}
+.due-line b{font-weight:700}
+.sumgrid .hl-late{background:linear-gradient(145deg,#b4566a,#8a3a4c)!important}
+.sumgrid .hl-calm{background:linear-gradient(145deg,#5f9c83,#3d7a62)!important}
